@@ -27,10 +27,26 @@ if (process.argv.includes('install-browser')) {
 
 const packageJSON = require('./package.json');
 const { ViriumServer } = require('./src/virium-mcp.js');
+const { ensureEnvironmentReady } = require('./src/vm/setup-environment.js');
+
+if (process.argv.includes('install-vm')) {
+  ensureEnvironmentReady()
+    .then((res) => {
+      console.log('[Virium] Environment ready:', res);
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('[Virium Error] Environment setup failed:', err);
+      process.exit(1);
+    });
+  return;
+}
 
 if (process.argv.includes('--use-vm')) {
-  const server = new ViriumServer({ useVm: true });
-  server.listen().catch(err => {
+  ensureEnvironmentReady().then(() => {
+    const server = new ViriumServer({ useVm: true });
+    return server.listen();
+  }).catch(err => {
     console.error('[Virium Error]', err);
     process.exit(1);
   });

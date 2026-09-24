@@ -4,6 +4,25 @@
 
 ---
 
+### Quick Start
+
+Virium auto-provisions QEMU and the prebuilt base VM image (`virium-base.qcow2`) into `~/.virium/` automatically on first run.
+
+#### 1. Running via NPX
+```bash
+npx @playwright/mcp --use-vm
+```
+
+#### 2. Running from GitHub / Local Clone
+```bash
+git clone https://github.com/microsoft/playwright-mcp.git virium
+cd virium
+npm install
+node cli.js --use-vm
+```
+
+---
+
 ### The Problem Virium Solves
 
 1. **Seamless Headless-to-Headful User Handoff:**

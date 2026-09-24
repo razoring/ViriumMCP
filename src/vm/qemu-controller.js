@@ -2,11 +2,13 @@ const { spawn } = require('child_process');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
+const { findQemuBinary, findBaseImage, ensureEnvironmentReady } = require('./setup-environment');
 
 class QemuController {
   constructor(config = {}) {
     this.config = {
-      imagePath: config.imagePath || path.join(__dirname, '../../virium-base.qcow2'),
+      imagePath: config.imagePath || findBaseImage() || path.join(__dirname, '../../virium-base.qcow2'),
+      qemuBinary: config.qemuBinary || findQemuBinary(),
       ramMB: config.ramMB || 2048,
       cpuCores: config.cpuCores || 2,
       cdpPort: config.cdpPort || 9222,
@@ -22,8 +24,15 @@ class QemuController {
   }
 
   async start() {
+    await ensureEnvironmentReady();
+    if (!this.config.imagePath || !fs.existsSync(this.config.imagePath)) {
+      const env = await ensureEnvironmentReady();
+      this.config.imagePath = env.imagePath;
+    }
+
     const isWindows = process.platform === 'win32';
     const accel = isWindows ? 'whpx' : 'kvm';
+    const qemuBin = this.config.qemuBinary || findQemuBinary();
 
     const args = [
       '-m', `${this.config.ramMB}M`,
@@ -37,7 +46,7 @@ class QemuController {
       '-vga', 'std'
     ];
 
-    this.process = spawn('qemu-system-x86_64', args, { stdio: 'ignore' });
+    this.process = spawn(qemuBin, args, { stdio: 'ignore' });
     this.process.on('exit', (code) => {
       this.process = null;
     });

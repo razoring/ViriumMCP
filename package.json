@@ -27,6 +27,7 @@
     "docker-build": "docker build --no-cache -t playwright-mcp-dev:latest .",
     "docker-rm": "docker rm playwright-mcp-dev",
     "docker-run": "docker run -it -p 8080:8080 --name playwright-mcp-dev playwright-mcp-dev:latest",
+    "postinstall": "node cli.js install-vm || true",
     "roll": "node roll.js"
   },
   "exports": {
