@@ -1,0 +1,40 @@
+#!/bin/sh
+# Virium Alpine Guest VM Initialization Script
+# Mount essential pseudo-filesystems
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /dev/shm
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /dev/shm
+
+# Setup network via virtio-net
+ip link set lo up
+ip link set eth0 up
+udhcpc -i eth0 -q -n
+
+# Start Virtual Framebuffer on :99 at 1280x800
+Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -ac &
+export DISPLAY=:99
+
+# Wait for X server socket
+while [ ! -S /tmp/.X11-unix/X99 ]; do
+  sleep 0.05
+done
+
+# Launch Chromium with remote debugging enabled
+exec chromium-browser \
+  --remote-debugging-port=9222 \
+  --remote-debugging-address=0.0.0.0 \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --disable-gpu \
+  --window-size=1280,800 \
+  --window-position=0,0 \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-background-networking \
+  --disable-sync \
+  --disable-translate \
+  --disable-features=TranslateUI \
+  --user-data-dir=/tmp/chromium-data

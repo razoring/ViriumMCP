@@ -26,7 +26,17 @@ if (process.argv.includes('install-browser')) {
 }
 
 const packageJSON = require('./package.json');
-const p = program.version('Version ' + packageJSON.version).name('Playwright MCP');
-tools.decorateMCPCommand(p, packageJSON.version);
+const { ViriumServer } = require('./src/virium-mcp.js');
 
-void program.parseAsync(process.argv);
+if (process.argv.includes('--use-vm')) {
+  const server = new ViriumServer({ useVm: true });
+  server.listen().catch(err => {
+    console.error('[Virium Error]', err);
+    process.exit(1);
+  });
+} else {
+  const p = program.version('Version ' + packageJSON.version).name('Playwright MCP (Virium)');
+  tools.decorateMCPCommand(p, packageJSON.version);
+  void program.parseAsync(process.argv);
+}
+
