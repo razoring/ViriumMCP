@@ -1,46 +1,110 @@
-## Playwright MCP
+## Virium — VM-Wrapped Playwright MCP
 
-A Model Context Protocol (MCP) server that provides browser automation capabilities using [Playwright](https://playwright.dev). This server enables LLMs to interact with web pages through structured accessibility snapshots, bypassing the need for screenshots or visually-tuned models.
+**Virium** is an advanced fork of the Model Context Protocol (MCP) server for Playwright that wraps browser automation inside a lightweight Virtual Machine (QEMU). It introduces exact RAM/disk state snapshotting, seamless headless-to-headful user handoffs, Set-of-Mark (SoM) visual grounding, and hardware-level framebuffer diagnostics.
 
-### Playwright MCP vs Playwright CLI
+---
 
-This package provides MCP interface into Playwright. If you are using a **coding agent**, you might benefit from using the [CLI+SKILLS](https://github.com/microsoft/playwright-cli) instead.
+### The Problem Virium Solves
 
-- **CLI**: Modern **coding agents** increasingly favor CLI–based workflows exposed as SKILLs over MCP because CLI invocations are more token-efficient: they avoid loading large tool schemas and verbose accessibility trees into the model context, allowing agents to act through concise, purpose-built commands. This makes CLI + SKILLs better suited for high-throughput coding agents that must balance browser automation with large codebases, tests, and reasoning within limited context windows.<br>**Learn more about [Playwright CLI with SKILLS](https://github.com/microsoft/playwright-cli)**.
+1. **Seamless Headless-to-Headful User Handoff:**
+   Standard Playwright cannot switch a running browser process from headless to headful on the fly. Doing so requires terminating Chromium, destroying active WebSockets, in-memory DOM state, and uncommitted form inputs. Virium runs Chromium inside a virtual framebuffer (`Xvfb`). Chromium is *always* headful internally—when a user handoff is triggered via `vm_handoff`, Virium pops up a native host display window (`SDL`) instantly without restarting the browser or losing session state.
 
-- **MCP**: MCP remains relevant for specialized agentic loops that benefit from persistent state, rich introspection, and iterative reasoning over page structure, such as exploratory automation, self-healing tests, or long-running autonomous workflows where maintaining continuous browser context outweighs token cost concerns.
+2. **Exact Memory State Snapshotting (`vm_snapshot` / `vm_restore`):**
+   Saving `storageState.json` only preserves cookies and local storage, dropping active TCP connections, WebSockets, pending fetch requests, and Canvas/WebGL state. Virium uses hardware VM RAM and disk snapshotting (`savevm` / `loadvm`) to freeze and resume the exact millisecond state of execution.
 
-### Key Features
+3. **Actionable Visual Grounding (Set-of-Mark):**
+   Standard Playwright MCP screenshots are non-interactive and instruct models not to act on them. Virium's `browser_take_screenshot({ annotate: true })` injects high-contrast numbered badges directly over interactable elements, enabling agents to execute visually-grounded actions via `browser_interact_mark({ markId: 14, action: 'click' })`.
 
-- **Fast and lightweight**. Uses Playwright's accessibility tree, not pixel-based input.
-- **LLM-friendly**. No vision models needed, operates purely on structured data.
-- **Deterministic tool application**. Avoids ambiguity common with screenshot-based approaches.
+4. **Decoupled In-Guest Browser Updates (`vm_check_updates` / `vm_update_browser`):**
+   Chromium binary updates occur dynamically inside the guest VM directly from official CDN manifests without requiring host npm package updates or tool code modifications.
 
-### Requirements
-- Node.js 18 or newer
-- VS Code, Cursor, Windsurf, Claude Desktop, Goose, Grok, Junie or any other MCP client
+---
 
-<!--
-// Generate using:
-node utils/generate-links.js
--->
+### System Architecture
 
-### Getting started
+```
++----------------------------------------------------------------------------------------------------+
+| HOST SYSTEM (Windows / Linux / macOS)                                                              |
+|                                                                                                    |
+|  +----------------------------------------------------------------------------------------------+  |
+|  | Virium Playwright MCP Server (Node.js)                                                       |  |
+|  |                                                                                              |  |
+|  |  [MCP Tools]                                                                                 |  |
+|  |   * Standard Playwright tools (browser_navigate, browser_click, browser_type, etc.)          |  |
+|  |   * Visual SoM Tools (browser_take_screenshot [annotate=true], browser_interact_mark)        |  |
+|  |   * VM & Update Tools (vm_snapshot, vm_restore, vm_screenshot, vm_handoff, vm_update_browser)  |  |
+|  |                                                                                              |  |
+|  |  +-------------------------------+          +---------------------------------------------+  |  |
+|  |  | VM Lifecycle Controller       |          | Playwright Core Client                      |  |  |
+|  |  | - QMP Socket Client           |          | - Connects via CDP                          |  |  |
+|  |  | - Snapshot Engine             |          |   ws://localhost:9222                       |  |  |
+|  |  +---------------+---------------+          +---------------------+-----------------------+  |  |
+|  +------------------|------------------------------------------------|---------------------------+  |
+|                     | QMP Commands                                   | CDP Protocol                 |
+|                     v                                                v                              |
+|  +----------------------------------------------------------------------------------------------+  |
+|  | Hypervisor: QEMU (WHPX on Windows / KVM on Linux)                                            |  |
+|  |                                                                                              |  |
+|  |  - Netdev Port Forward: 9222 -> 9222 (CDP), 4444 (QMP control)                               |  |
+|  |  - Display Modes:                                                                            |  |
+|  |      * Headless (Agent Mode): -display none                                                  |  |
+|  |      * Headful (User Handoff): -display sdl (Native host GUI window pops up)                 |  |
+|  |                                                                                              |  |
+|  |  +----------------------------------------------------------------------------------------+  |  |
+|  |  | BAREBONES GUEST VM (Alpine Linux x86_64, ~180MB)                                       |  |  |
+|  |  |                                                                                        |  |  |
+|  |  |  [X11 / Xvfb Display Server :99 (1280x800x24)]                                        |  |  |
+|  |  |       |                                                                                |  |  |
+|  |  |       +---> Chromium Browser (--remote-debugging-port=9222)                             |  |  |
+|  |  +----------------------------------------------------------------------------------------+  |  |
+|  +----------------------------------------------------------------------------------------------+  |
++----------------------------------------------------------------------------------------------------+
+```
 
-First, install the Playwright MCP server with your client.
+---
 
-**Standard config** works in most of the tools:
+### Virium Toolset Reference
 
-```js
+| Tool Name | Key Parameters | Description |
+| :--- | :--- | :--- |
+| `browser_take_screenshot` | `annotate` (bool), `filter` ("all" \| "clickable" \| "inputs") | Captures page screenshot. When `annotate: true`, injects high-contrast numbered badges on interactable elements to enable visual actions. |
+| `browser_interact_mark` | `markId` (int), `action` ("click" \| "type" \| "hover"), `text` (string) | Executes direct action on a marked element from an annotated screenshot. |
+| `vm_snapshot` | `name` (string) | Freezes exact RAM + disk state of VM to a named tag via QMP `savevm`. |
+| `vm_restore` | `name` (string) | Restores exact RAM + disk state of VM from a snapshot tag via QMP `loadvm`. |
+| `vm_screenshot` | `outputPath` (string) | Captures hardware-level screen via QMP `screendump`. Includes OS dialogs, file upload prompts, browser chrome, and popups. |
+| `vm_handoff` | `reason` (string), `timeoutSeconds` (number) | Pauses agent, pops up native QEMU display window for user intervention (2FA/CAPTCHA), and returns control on completion. |
+| `vm_check_updates` | None | Compares active VM Chromium version against Playwright CDN manifests (`browsers.json`). |
+| `vm_update_browser` | `targetVersion` (string) | Downloads/installs pre-compiled Chromium binary inside VM overlay directly from official CDN. |
+| *Standard Playwright Tools* | `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_fill_form`, etc. | 100% supported and executed directly against the VM Chromium instance via CDP. |
+
+---
+
+### Quick Start with Virium
+
+Run with `--use-vm` flag enabled:
+
+```json
 {
   "mcpServers": {
-    "playwright": {
+    "virium": {
       "command": "npx",
       "args": [
-        "@playwright/mcp@latest"
+        "@playwright/mcp@latest",
+        "--use-vm"
       ]
     }
   }
+}
+```
+
+---
+
+### Requirements
+- Node.js 18 or newer
+- QEMU (`qemu-system-x86_64`) installed with WHPX (Windows) or KVM (Linux) enabled
+- Any MCP-compliant client (VS Code, Cursor, Antigravity, Claude Code, Goose, etc.)
+
+---
 }
 ```
 
