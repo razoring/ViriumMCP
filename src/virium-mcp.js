@@ -49,13 +49,10 @@ class ViriumServer {
       const pages = context.pages();
       this.page = pages.length > 0 ? pages[0] : await context.newPage();
     } catch (err) {
-      if (!this.options.useVm) {
-        // Fallback to local launched browser if CDP connection failed
-        this.browser = await chromium.launch({ headless: true });
-        this.page = await this.browser.newPage();
-      } else {
-        throw err;
-      }
+      // Fallback to local launched browser if CDP connection failed (VM missing or broken)
+      console.warn(`[Virium] CDP Connection failed on ${cdpUrl}, launching local Chromium instead.`, err.message);
+      this.browser = await chromium.launch({ headless: true });
+      this.page = await this.browser.newPage();
     }
   }
 

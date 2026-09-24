@@ -43,8 +43,8 @@ if (process.argv.includes('install-vm')) {
 }
 
 if (process.argv.includes('--use-vm')) {
-  ensureEnvironmentReady().then(() => {
-    const server = new ViriumServer({ useVm: true });
+  ensureEnvironmentReady().then((res) => {
+    const server = new ViriumServer({ useVm: true, imagePath: res.imagePath, qemuPath: res.qemuPath });
     return server.listen();
   }).catch(err => {
     console.error('[Virium Error]', err);
